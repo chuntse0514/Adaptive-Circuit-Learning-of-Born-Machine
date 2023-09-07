@@ -1,5 +1,5 @@
 CONFIG = {
-    'data': 'bas 3x3',
+    'data': 'bas 4x4',
     'N': 100000,
     'show_data_hist': True,
     'model': 'DDQCL',

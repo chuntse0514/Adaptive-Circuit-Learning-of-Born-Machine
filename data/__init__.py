@@ -17,4 +17,5 @@ DATA_HUB = {
 
     'bas 2x2': partial(BarAndStripes, width=2, height=2),
     'bas 3x3': partial(BarAndStripes, width=3, height=3),
+    'bas 4x4': partial(BarAndStripes, width=4, height=4),
 }

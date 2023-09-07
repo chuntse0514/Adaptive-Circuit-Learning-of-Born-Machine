@@ -5,6 +5,8 @@ import torch.optim as optim
 from pennylane import numpy as np
 from utils import epsilon, evaluate
 from circuits.templates import *
+import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
 
 class Generator(nn.Module):
 
@@ -53,6 +55,12 @@ class DDQCL:
 
     def fit(self, target_prob: torch.Tensor):
 
+        fig = plt.figure(figsize=(15, 9))
+        gs = gridspec.GridSpec(2, 2, figure=fig)
+        ax1 = fig.add_subplot(gs[0, 0])
+        ax2 = fig.add_subplot(gs[1, 0])
+        ax3 = fig.add_subplot(gs[:, 1])
+
         for i_epoch in range(self.n_epoch):
 
             prob = self.generator.forward()
@@ -69,8 +77,36 @@ class DDQCL:
             self.js_history.append(js_div)
 
             if (i_epoch + 1) % 5 == 0:
-                print(f'epoch: {i_epoch+1} nll: {self.loss_history[-1]} KL_divergence: {kl_div} JS_divergence: {js_div}')
+                print(f'epoch: {i_epoch+1}  |  cross entropy: {self.loss_history[-1]: 6f}  |  KL div: {kl_div:6f}  |  JS div: {js_div:6f}')
 
-        # print(qml.draw(self.generator.circuit)(self.generator.params, self.generator.su2_params))
+        ax1.plot(np.arange(self.n_epoch)+1, self.kl_history, label='KL divergence', color='red', marker='^', markerfacecolor=None)
+        ax1.plot(np.arange(self.n_epoch)+1, self.js_history, label='JS divergence', color='blue', marker='x', markerfacecolor=None)
+        ax1.set_xlabel('epoch')
+        ax1.set_ylabel('KL / JS divergence')
+        ax1.grid()
+        ax1.legend()
+
+        ax2.plot(np.arange(len(self.loss_history))+1, self.loss_history, color='green', marker='P')
+        ax2.set_xlabel('iteration')
+        ax2.set_ylabel('cross entropy')
+        ax2.grid()
+
+        ax3.bar(np.arange(prob.shape[0])+1, target_prob.detach().cpu().numpy(), alpha=0.5, color='blue', label='target', width=100)
+        ax3.bar(np.arange(prob.shape[0])+1, prob.detach().cpu().numpy(), alpha=0.5, color='red', label='approx', width=100)
+        ax3.legend()
+
+        plt.savefig('ddqcl_bas4x4.png')
 
         return self.kl_history, self.js_history
+
+if __name__ == '__main__':
+    from data import DATA_HUB
+
+    n_qubit = 16
+    n_epoch = 2000
+    circuit_depth = 20
+    lr = 1e-1
+
+    data = torch.Tensor(DATA_HUB['bas 4x4']().get_data(10000000)).double().to(torch.device("cuda:0"))
+    model = DDQCL(n_qubit, n_epoch, circuit_depth, lr)
+    model.fit(data)
