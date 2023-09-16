@@ -11,6 +11,7 @@ class Triangular(DataBaseClass):
         self._n_bit = n_bit
         self.range = 2 ** n_bit
         self.left, self.mode, self.right = left, mode, right
+        self.name = f'triangular {n_bit}'
 
     def get_data(self, num: int) -> np.array:
         ds = []

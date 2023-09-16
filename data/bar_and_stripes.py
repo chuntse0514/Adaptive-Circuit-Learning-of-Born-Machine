@@ -8,6 +8,7 @@ class BarAndStripes(DataBaseClass):
     def __init__(self, width: int, height: int):
         self._n_bit = width * height
         self.COL, self.ROW = width, height
+        self.name = f'bas {width}x{height}'
 
     def get_data(self, num: int) -> np.array:
         indices = self.get_indices()
