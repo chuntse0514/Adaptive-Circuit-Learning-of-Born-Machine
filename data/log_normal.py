@@ -9,6 +9,7 @@ class LogNormal(DataBaseClass):
         self._n_bit = n_bit
         self.range = 2 ** n_bit
         self.mu, self.sigma = mu, sigma
+        self.name = f'log normal {n_bit}'
 
     def get_data(self, num: int) -> np.array:
         ds = []

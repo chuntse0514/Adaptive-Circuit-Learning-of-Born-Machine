@@ -14,6 +14,7 @@ class Bimodal(DataBaseClass):
         self._n_bit = n_bit
         self.range = 2 ** n_bit
         self.mu1, self.sigma1, self.mu2, self.sigma2 = mu1, sigma1, mu2, sigma2
+        self.name = f'bimodal {n_bit}'
 
     def get_point(self):
         return [
