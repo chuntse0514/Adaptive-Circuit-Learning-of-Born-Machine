@@ -4,6 +4,7 @@ from .log_normal import LogNormal
 from .triangular import Triangular
 from .bimodal import Bimodal
 from .bar_and_stripes import BarAndStripes
+from .real_images import RealImage
 
 
 DATA_HUB = {
@@ -18,4 +19,8 @@ DATA_HUB = {
     'bas 2x2': partial(BarAndStripes, width=2, height=2),
     'bas 3x3': partial(BarAndStripes, width=3, height=3),
     'bas 4x4': partial(BarAndStripes, width=4, height=4),
+
+    'real image 1': partial(RealImage, filename='./images/real_image_1.jpg'),
+    'real image 2': partial(RealImage, filename='./images/real_image_2.jpg'),
+    'real image 3': partial(RealImage, filename='./images/real_image_3.jpg'),
 }

@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.spatial.distance import jensenshannon
 from scipy.stats import entropy
+import torch
 
 epsilon = 1e-12
 
@@ -36,3 +37,56 @@ def evaluate(target: np.array, outcome: np.array, verbose_pmf: bool = False):
         
     return entropy(target, outcome), \
            jensenshannon(target, outcome) ** 2
+
+def partial_trace(state: torch.Tensor, dims=list[int]):
+    
+    n_qubit = int(np.log2(state.shape[0]))
+    rdm_dim = 2 ** (n_qubit - len(dims))
+
+    state = state.view(*[2 for _ in range(n_qubit)])
+    rdm = torch.tensordot(state, state.conj(), dims=(dims,dims))
+    return rdm.view(rdm_dim, rdm_dim)
+
+def von_Neumann_entropy(state: torch.Tensor):
+
+    # return the non-zero eigenvalues
+    eigvals = torch.linalg.eigvals(state).real
+    eigvals = torch.maximum(eigvals, torch.zeros_like(eigvals))
+    return -torch.inner(eigvals, torch.log2(eigvals)).item()
+
+def mutual_information(state: torch.Tensor, subsystems: tuple[list | int, list | int]):
+
+    # convert to the data structure tuple[list, list]
+    subsystems = tuple([subsystem] for subsystem in subsystems if isinstance(subsystem, int))
+    entire_system = subsystems[0] + subsystems[1]
+
+    n_qubit = int(np.log2(state.shape[0]))
+    
+    rho_AB = partial_trace(state, dims=[i for i in range(n_qubit) if i not in entire_system])
+    rho_A = partial_trace(state, dims=[i for i in range(n_qubit) if i not in subsystems[0]])
+    rho_B = partial_trace(state, dims=[i for i in range(n_qubit) if i not in subsystems[1]])
+
+    return von_Neumann_entropy(rho_A) + von_Neumann_entropy(rho_B) - von_Neumann_entropy(rho_AB)
+
+def concurrence(rho: torch.Tensor):
+
+    rho_eigvals, rho_eigvecs = torch.linalg.eigh(rho)
+    rho_sqrt = rho_eigvecs @ torch.diag(torch.sqrt(rho_eigvals)) @ rho_eigvecs.conj().T
+
+    sigma_YY = torch.fliplr(torch.diag(torch.Tensor([-1, 1, 1, -1]))).double().to(rho.device)
+    rho_tilde = sigma_YY @ rho.conj() @ sigma_YY
+
+    R_eigvals = torch.sqrt(torch.linalg.eigvals(rho_sqrt @ rho_tilde @ rho_sqrt).real)
+
+    return max(0, (R_eigvals[0] - torch.sum(R_eigvals[1:])).item())
+
+def entanglement_of_formation(state: torch.Tensor, subsystems=tuple[int, int]):
+
+    n_qubit = int(np.log2(state.shape[0]))
+
+    rho = partial_trace(state, dims=[i for i in range(n_qubit) if i not in subsystems])
+    C = concurrence(rho)
+    if C == 0:
+        return 0
+    x = (1 + np.sqrt(1 - C ** 2)) / 2
+    return -x * np.log2(x) - (1 - x) * np.log2(1 - x)

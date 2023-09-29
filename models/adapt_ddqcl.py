@@ -4,29 +4,55 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from pennylane import numpy as np
-from utils import epsilon, evaluate
+from utils import (
+    epsilon, evaluate, mutual_information, entanglement_of_formation
+)
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 from functools import partial
+from pprint import pprint
 
-def operator_pool_G_extend(n_qubit):
+def operator_pool(n_qubit):
 
-    qubit_pool = []
+    pool = []
+    gate_description = []
 
     for i in range(n_qubit):
         for j in range(n_qubit):
             if i != j:
-                qubit_pool.append(partial(PauliStringRotation, pauliString=('ZY', [i, j])))
-                qubit_pool.append(partial(qml.CRX, wires=[i, j]))
-                qubit_pool.append(partial(qml.CRY, wires=[i, j]))
-                qubit_pool.append(partial(qml.CRZ, wires=[i, j]))
+                pool.append(partial(PauliStringRotation, pauliString=('XY', [i, j])))
+                pool.append(partial(PauliStringRotation, pauliString=('YZ', [i, j])))
+                # pool.append(partial(PauliStringRotation, pauliString=('ZX', [i, j])))
+                # pool.append(partial(qml.CRX, wires=[i, j]))
+                pool.append(partial(qml.CRY, wires=[i, j]))
+                # pool.append(partial(qml.CRZ, wires=[i, j]))
+
+                gate_description.append(f'e^[X{i} Y{j}]')
+                gate_description.append(f'e^[Y{i} Z{j}]')
+                # gate_description.append(f'e^[Z{i} X{j}]')
+                # gate_description.append(f'CRX[{i}, {j}]')
+                gate_description.append(f'CRY[{i}, {j}]')
+                # gate_description.append(f'CRZ[{i}, {j}]')
+
+    
+    # for i in range(n_qubit):
+    #     for j in range(i+1, n_qubit):
+    #         pool.append(partial(PauliStringRotation, pauliString=('XX', [i, j])))
+    #         pool.append(partial(PauliStringRotation, pauliString=('YY', [i, j])))
+    #         pool.append(partial(PauliStringRotation, pauliString=('ZZ', [i, j])))
+    #         gate_description.append(f'e^[X{i} X{j}]')
+    #         gate_description.append(f'e^[Y{i} Y{j}]')
+    #         gate_description.append(f'e^[Z{i} Z{j}]')
 
     for i in range(n_qubit):
-        qubit_pool.append(partial(qml.RX, wires=i))
-        qubit_pool.append(partial(qml.RY, wires=i))
-        qubit_pool.append(partial(qml.RZ, wires=i))
+        # pool.append(partial(qml.RX, wires=i))
+        pool.append(partial(qml.RY, wires=i))
+        # pool.append(partial(qml.RZ, wires=i))
+        # gate_description.append(f'RX[{i}]')
+        gate_description.append(f'RY[{i}]')
+        # gate_description.append(f'RZ[{i}]')
 
-    return qubit_pool
+    return pool, gate_description
 
 def PauliStringRotation(theta, pauliString: tuple[str, list[int]]):
     
@@ -65,11 +91,13 @@ class adapt_DDQCL:
         
         self.n_qubit = n_qubit
         self.n_epoch = n_epoch
-        self.pool = pool
+        self.pool = pool[0]
+        self.gate_description = pool[1]
         self.lr = lr
         self.threshold1 = 5e-3
         self.threshold2 = 1e-2
-        self.Ng = 80
+        self.Ng = 1
+        self.ratio = 0.1
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         
         self.params = nn.ParameterDict({
@@ -132,14 +160,33 @@ class adapt_DDQCL:
         
         grads = np.abs(grads)
         max_grad = np.max(grads)
-        if max_grad * 0.3 > self.threshold1:
-            self.Ng = np.sum(grads > max_grad * 0.3)
+        if max_grad * self.ratio > self.threshold1:
+            self.Ng = np.sum(grads > max_grad * self.ratio)
         else:
             self.Ng = np.sum(grads > self.threshold1)
         
         max_grad_indicies = np.argsort(grads)[::-1][:self.Ng]
 
-        return grads[max_grad_indicies], max_grad_indicies
+        return grads[max_grad_indicies], max_grad_indicies, [self.gate_description[i] for i in max_grad_indicies]
+    
+    def entanglement_measure(self, target_prob):
+
+        state = torch.sqrt(target_prob)
+        ent_list = []
+        
+        for i in range(self.n_qubit):
+            for j in range(i+1, self.n_qubit):
+                MI = mutual_information(state, subsystems=(i, j))
+                EOF = entanglement_of_formation(state, subsystems=(i, j))
+                ent_list.append([(i, j), MI, EOF])
+
+        ent_list = sorted(ent_list, key=lambda x: x[1], reverse=True)
+
+        for ent_description in ent_list:
+            (i, j) = ent_description[0]
+            MI = ent_description[1]
+            EOF = ent_description[2]
+            print(f'subsystem: ({i}, {j}) | mutual information: {MI: 3f} | entanglement of formation: {EOF:3f}')
     
     def fit(self, target_prob):
         
@@ -152,11 +199,13 @@ class adapt_DDQCL:
         ax2 = fig.add_subplot(gs[1, 0])
         ax3 = fig.add_subplot(gs[:, 1])
 
+        self.entanglement_measure(target_prob)
+
         for i_epoch in range(self.n_epoch):
 
-            max_grads, max_grad_indicies = self.select_operator(target_prob)
+            max_grads, max_grad_indicies, max_grad_gates = self.select_operator(target_prob)
 
-            print(f'==== Found maximium gradient {max_grads} at index {max_grad_indicies} ====')
+            pprint(f'==== Found maximium gradient {max_grads} of gates ' + ', '.join(max_grad_gates) + ' ====')
             if len(max_grads) == 0:
                 print('Convergence criterion has reached, break the loop!')
                 break
@@ -190,30 +239,42 @@ class adapt_DDQCL:
             kl_div, js_div = evaluate(target_prob.detach().cpu().numpy(), prob.detach().cpu().numpy())
             self.kl_history.append(kl_div)
             self.js_history.append(js_div)
-            print(f'epoch: {i_epoch+1}, loss: {self.loss_history[-1]:.6f}, KL divergence: {kl_div:.6f}, JS divergence: {js_div:.6f}')
-        
-        print(qml.draw(model)())
-        
-        ax1.clear()
-        ax1.plot(np.arange(i_epoch)+1, self.kl_history, label='KL divergence', color='red', marker='^', markerfacecolor=None)
-        ax1.plot(np.arange(i_epoch)+1, self.js_history, label='JS divergence', color='blue', marker='x', markerfacecolor=None)
-        ax1.set_xlabel('epoch')
-        ax1.set_ylabel('KL / JS divergence')
-        ax1.grid()
-        ax1.legend()
+            print(f'epoch: {i_epoch+1}  |   loss: {self.loss_history[-1]:.6f}  |   KL divergence: {kl_div:.6f}  |  JS divergence: {js_div:.6f}')
 
-        ax2.clear()
-        ax2.plot(np.arange(len(self.loss_history))+1, self.loss_history, color='green', marker='P')
-        ax2.set_xlabel('iteration')
-        ax2.set_ylabel('cross entropy loss')
-        ax2.grid()
+            ax1.clear()
+            ax1.plot(np.arange(len(self.kl_history))+1, self.kl_history, label='KL divergence', color='red', marker='^', markerfacecolor=None)
+            ax1.plot(np.arange(len(self.js_history))+1, self.js_history, label='JS divergence', color='blue', marker='X', markerfacecolor=None)
+            ax1.set_xlabel('epoch')
+            ax1.set_ylabel('KL / JS divergence')
+            ax1.grid()
+            ax1.legend()
 
-        ax3.clear()
-        ax3.bar(np.arange(prob.shape[0])+1, target_prob.detach().cpu().numpy(), alpha=0.5, color='blue', label='target', width=100)
-        ax3.bar(np.arange(prob.shape[0])+1, prob.detach().cpu().numpy(), alpha=0.5, color='red', label='approx', width=100)
-        ax3.legend()
-        
-        plt.savefig('ADAPT-DDQCL-BAS4x4.png')
+            ax2.clear()
+            ax2.plot(np.arange(len(self.loss_history))+1, self.loss_history, color='green', marker='P')
+            ax2.set_xlabel('iteration')
+            ax2.set_ylabel('cross entropy loss')
+            ax2.grid()
+
+            ax3.clear()
+            ax3.bar(np.arange(prob.shape[0])+1, target_prob.detach().cpu().numpy(), alpha=0.5, color='blue', label='target')
+            ax3.bar(np.arange(prob.shape[0])+1, prob.detach().cpu().numpy(), alpha=0.5, color='red', label='approx')
+            ax3.legend()
+
+            plt.pause(0.01)
+            plt.savefig(f'./images/ADAPT-DDQCL-BAS3x3(lr={self.lr}, ratio={self.ratio}, t1={self.threshold1}, t2={self.threshold2}).png')
+
         
         plt.ioff()
         plt.show()
+
+if __name__ == '__main__':
+
+    from data import DATA_HUB
+
+    n_qubit = 9
+    n_epoch = 100
+    pool = operator_pool(n_qubit)
+    lr = 1e-2
+    data = torch.Tensor(DATA_HUB['bas 3x3']().get_data(1000000)).double().to(torch.device("cuda:0"))
+    model = adapt_DDQCL(n_qubit, n_epoch, pool, lr)
+    model.fit(data)
