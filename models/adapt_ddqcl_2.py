@@ -13,23 +13,8 @@ from functools import partial
 from pprint import pprint
 from data import *
 from optimize.Rotosolve import Rotosolve_Torch
- 
+
 def operator_pool(n_qubit):
-
-    pool = []
-    gate_description = []
-
-    for i in range(n_qubit):
-        for j in range(n_qubit):
-            if i != j:
-                pool.append(partial(PauliStringRotation, pauliString=('XY', [i, j])))
-                pool.append(partial(PauliStringRotation, pauliString=('YZ', [i, j])))
-                gate_description.append(f'e^[X{i} Y{j}]')
-                gate_description.append(f'e^[Y{i} Z{j}]')
-        
-    return pool, gate_description
-
-def operator_pool_V(n_qubit):
     
     pool = []
     gate_description = []
@@ -45,11 +30,18 @@ def operator_pool_V(n_qubit):
     for i in reversed(range(n_qubit-2)):
         pool.append(partial(PauliStringRotation, pauliString=('Z' * i + 'Y', list(range(i)) + [i+2])))
         if i > 1:
-            gate_description.append(f'e^[Z0:{i-1}] Y{i+2}')
+            gate_description.append(f'e^[Z0:{i-1} Y{i+2}]')
         elif i == 1:
             gate_description.append(f'e^[Z0 Y2]')
         else:
             gate_description.append(f'e^[Y1]')
+
+    for i in range(n_qubit-1):
+        pool.append(partial(PauliStringRotation, pauliString=('ZY', [i, i+1])))
+        gate_description.append(f'e^[Z{i} Y{i+1}]')
+    for i in range(2, n_qubit):
+        pool.append(partial(PauliStringRotation, pauliString=('Y', [i])))
+        gate_description.append(f'e^[Y{i}]')
 
     return pool, gate_description
 
@@ -96,21 +88,16 @@ class adapt_DDQCL:
         self.lr = lr
         self.threshold1 = 1e-5
         self.threshold2 = 1e-3
-        self.Ng = 1
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.target_prob = torch.Tensor(data_class.get_data(num=sample_size)).double().to(self.device)
-        self.pool, self.gate_description = operator_pool_V(self.n_qubit)
+        self.pool, self.gate_description = operator_pool(self.n_qubit)
 
         self.params = nn.ParameterDict({
-            'ry': nn.Parameter(torch.full((self.n_qubit,), np.pi/2), requires_grad=True),
-            'freeze': nn.Parameter(torch.Tensor([]), requires_grad=False),
-            'append': nn.Parameter(torch.Tensor([]), requires_grad=True)
+            'append': nn.Parameter(torch.zeros(1), requires_grad=True),
+            'trainable': nn.Parameter(torch.Tensor([]), requires_grad=True)
         }).to(self.device)
 
-        self.operatorID = {
-            'append': [],
-            'freeze': []
-        }
+        self.operatorID = []
         self.loss_history = []
         self.kl_history = []
         self.js_history = []
@@ -122,29 +109,15 @@ class adapt_DDQCL:
 
         self.filename = f'./images/ADAPT-DDQCL(data={data_class.name}, lr={lr}, t1={self.threshold1}, t2={self.threshold2}).png'
 
-    def circuit(self, ry, freeze, append, mode=None, eval_gate=None):
+    def circuit(self, params, eval_param, eval_gate=None):
 
-        if mode == 'train':
+        for i, id in enumerate(self.operatorID):
+            gate = self.pool[id]
+            gate(params[i])
 
-            for i, id in enumerate(self.operatorID['freeze']):
-                gate = self.pool[id]
-                gate(freeze[i].detach())
-
-            for i, id in enumerate(self.operatorID['append']):
-                gate = self.pool[id]
-                gate(append[i])
+        eval_gate(eval_param)
             
-            return qml.probs(wires=list(range(self.n_qubit)))
-
-        elif mode == 'eval':
-
-            for i, id in enumerate(self.operatorID['freeze']):
-                gate = self.pool[id]
-                gate(freeze[i].detach())
-
-            eval_gate(append)
-            
-            return qml.probs(wires=list(range(self.n_qubit)))
+        return qml.probs(wires=list(range(self.n_qubit)))
 
     def select_operator(self):
         
@@ -154,54 +127,30 @@ class adapt_DDQCL:
         model = qml.QNode(circuit, dev, interface='torch', diff_method='backprop')
         min_vals = []
         self.params['append'] = nn.Parameter(torch.zeros(1), requires_grad=True).to(self.device)
-        self.params['ry'].requires_grad = False
-        self.params['freeze'].requires_grad = False
+        self.params['trainable'].requires_grad = False
 
         for eval_gate in self.pool:
             opt = Rotosolve_Torch(
-                params=[self.params['ry'], self.params['freeze'], self.params['append']],
+                params=[self.params['trainable'], self.params['append']],
                 qnode=model,
                 criterion=self.criterion,
                 target_prob=self.target_prob,
                 full_output=True,
-                mode='eval',
-                eval_gate=eval_gate
+                eval_gate=eval_gate,
             )
             min_vals.append(opt.step(mode='eval')[0])
+        self.params['trainable'].requires_grad = True
+        selected_index = np.argmin(np.array(min_vals))
+        selected_gate = self.gate_description[selected_index]
+        min_loss = min_vals[selected_index]
 
-        self.params['ry'].requires_grad = True
-        self.params['freeze'].requires_grad = True
-        
-        selected_indices = np.argsort(np.array(min_vals))[:self.Ng].tolist()
-        selected_gates = [self.gate_description[i] for i in selected_indices]
-        min_losses = [min_vals[i] for i in selected_indices]
-
-        return min_losses, selected_indices, selected_gates
-    
-    def entanglement_measure(self):
-
-        state = torch.sqrt(self.target_prob)
-        ent_list = []
-        
-        for i in range(self.n_qubit):
-            for j in range(i+1, self.n_qubit):
-                MI = mutual_information(state, subsystems=(i, j))
-                EOF = entanglement_of_formation(state, subsystems=(i, j))
-                ent_list.append([(i, j), MI, EOF])
-
-        ent_list = sorted(ent_list, key=lambda x: x[1], reverse=True)
-
-        for ent_description in ent_list:
-            (i, j) = ent_description[0]
-            MI = ent_description[1]
-            EOF = ent_description[2]
-            print(f'subsystem: ({i}, {j}) | mutual information: {MI: 3f} | entanglement of formation: {EOF:3f}')
+        return min_loss, selected_index, selected_gate
     
     def fit(self):
         
         dev = qml.device('default.qubit.torch', wires=self.n_qubit)
         
-        # plt.ion()
+        plt.ion()
         # fig = plt.figure(figsize=(15, 9))
         # gs = gridspec.GridSpec(2, 2, figure=fig)
 
@@ -215,59 +164,38 @@ class adapt_DDQCL:
         #     ax2 = fig.add_subplot(gs[1, 0])
         #     ax3 = fig.add_subplot(gs[:, 1])
 
-        self.entanglement_measure()
-
-        # for i in range(10):
-        #     circuit = self.circuit
-        #     model = qml.QNode(circuit, dev, interface='torch', diff_method='backprop')
-
-        #     opt = Rotosolve_Torch(
-        #         params=[self.params['ry'], self.params['freeze'], self.params['append']],
-        #         qnode=model,
-        #         criterion=self.criterion,
-        #         target_prob=self.target_prob,
-        #         full_output=True,
-        #         mode='train'
-        #     )
-
-        #     print(opt.step(mode='train'))
-
         for i_epoch in range(self.n_epoch):
 
-            min_losses, selected_indices, selected_gates = self.select_operator()
+            min_loss, selected_index, selected_gate = self.select_operator()
 
-            print(f'==== Found minimum losses')
-            pprint(min_losses)
-            print('of gates')
-            pprint(', '.join(selected_gates))
-            print('====')
+            print(f'==== Found minimum losses {min_loss} of gates {selected_gate} ====')
 
-            self.operatorID['append'] = selected_indices
-            self.params['append'] = nn.Parameter(torch.zeros(self.Ng), requires_grad=True).to(self.device)
             circuit = self.circuit
             model = qml.QNode(circuit, dev, interface='torch', diff_method='backprop')
+            opt = Rotosolve_Torch(
+                params=[self.params['trainable'], self.params['append']],
+                qnode=model,
+                criterion=self.criterion,
+                target_prob=self.target_prob,
+                full_output=True,
+                eval_gate=self.pool[selected_index],
+            )
+            opt.step(mode='train')
 
-            for i in range(10):
-                opt = Rotosolve_Torch(
-                    params=[self.params['ry'], self.params['freeze'], self.params['append']],
-                    qnode=model,
-                    criterion=self.criterion,
-                    target_prob=self.target_prob,
-                    full_output=True,
-                    mode='train'
-                )
-
-                print(opt.step())
-            prob =  model(self.params['ry'], self.params['freeze'], self.params['append'], mode='train').squeeze()
+            prob =  model(self.params['trainable'], self.params['append'], eval_gate=self.pool[selected_index]).squeeze()
             loss = self.criterion(self.target_prob, prob)
             self.loss_history.append(loss.item())
-            self.operatorID['freeze'] += self.operatorID['append']
-            self.params['freeze'] = torch.cat((self.params['freeze'], self.params['append'].clone()))
+
+            self.params['trainable'] = torch.cat((self.params['trainable'], self.params['append'].clone()))
+            self.operatorID.append(selected_index)
 
             kl_div, js_div = evaluate(self.target_prob.detach().cpu().numpy(), prob.detach().cpu().numpy())
             self.kl_history.append(kl_div)
             self.js_history.append(js_div)
             print(f'epoch: {i_epoch+1}  |   loss: {self.loss_history[-1]:.6f}  |   KL divergence: {kl_div:.6f}  |  JS divergence: {js_div:.6f}')
+
+            plt.imshow(prob.detach().cpu().numpy().reshape(256, 256))
+            plt.pause(0.01)
 
             # ax1.clear()
             # ax1.plot(np.arange(len(self.kl_history))+1, self.kl_history, label='KL divergence', color='red', marker='^', markerfacecolor=None)
