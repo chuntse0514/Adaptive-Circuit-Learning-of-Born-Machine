@@ -10,7 +10,7 @@ DATA_HUB = {
     'triangular 3': Triangular(n_bit=3, left=0, mode=2, right=7),
     'bimodal 3': Bimodal(n_bit=3, mu1=0.5, sigma1=1., mu2=3.5, sigma2=0.5),
 
-    'log normal 10': LogNormal(n_bit=10, mu=6., sigma=1.5),
+    'log normal 10': LogNormal(n_bit=10, mu=5.5, sigma=0.9),
     'triangular 10': Triangular(n_bit=10, left=0, mode=2, right=1023),
     'bimodal 10': Bimodal(n_bit=10, mu1=2 ** 10 * 2 / 7, sigma1=2 ** 10 / 8, mu2=2 ** 10 * 5 / 7, sigma2=2 ** 10 / 8),
 

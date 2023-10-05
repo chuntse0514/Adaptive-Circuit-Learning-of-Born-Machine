@@ -94,7 +94,7 @@ class adapt_DDQCL:
 
         self.params = nn.ParameterDict({
             'append': nn.Parameter(torch.zeros(1), requires_grad=True),
-            'trainable': nn.Parameter(torch.Tensor([]), requires_grad=True)
+            'freeze': nn.Parameter(torch.Tensor([]), requires_grad=False)
         }).to(self.device)
 
         self.operatorID = []
@@ -127,11 +127,10 @@ class adapt_DDQCL:
         model = qml.QNode(circuit, dev, interface='torch', diff_method='backprop')
         min_vals = []
         self.params['append'] = nn.Parameter(torch.zeros(1), requires_grad=True).to(self.device)
-        self.params['trainable'].requires_grad = False
 
         for eval_gate in self.pool:
             opt = Rotosolve_Torch(
-                params=[self.params['trainable'], self.params['append']],
+                params=[self.params['freeze'], self.params['append']],
                 qnode=model,
                 criterion=self.criterion,
                 target_prob=self.target_prob,
@@ -139,7 +138,6 @@ class adapt_DDQCL:
                 eval_gate=eval_gate,
             )
             min_vals.append(opt.step(mode='eval')[0])
-        self.params['trainable'].requires_grad = True
         selected_index = np.argmin(np.array(min_vals))
         selected_gate = self.gate_description[selected_index]
         min_loss = min_vals[selected_index]
@@ -173,7 +171,7 @@ class adapt_DDQCL:
             circuit = self.circuit
             model = qml.QNode(circuit, dev, interface='torch', diff_method='backprop')
             opt = Rotosolve_Torch(
-                params=[self.params['trainable'], self.params['append']],
+                params=[self.params['freeze'], self.params['append']],
                 qnode=model,
                 criterion=self.criterion,
                 target_prob=self.target_prob,
@@ -182,11 +180,12 @@ class adapt_DDQCL:
             )
             opt.step(mode='train')
 
-            prob =  model(self.params['trainable'], self.params['append'], eval_gate=self.pool[selected_index]).squeeze()
+            prob =  model(self.params['freeze'], self.params['append'], eval_gate=self.pool[selected_index]).squeeze()
             loss = self.criterion(self.target_prob, prob)
             self.loss_history.append(loss.item())
 
-            self.params['trainable'] = torch.cat((self.params['trainable'], self.params['append'].clone()))
+            self.params['freeze'] = torch.cat((self.params['freeze'], self.params['append'].clone()))
+            self.params['freeze'].requires_grad = False
             self.operatorID.append(selected_index)
 
             kl_div, js_div = evaluate(self.target_prob.detach().cpu().numpy(), prob.detach().cpu().numpy())
@@ -195,6 +194,7 @@ class adapt_DDQCL:
             print(f'epoch: {i_epoch+1}  |   loss: {self.loss_history[-1]:.6f}  |   KL divergence: {kl_div:.6f}  |  JS divergence: {js_div:.6f}')
 
             plt.imshow(prob.detach().cpu().numpy().reshape(256, 256))
+            plt.savefig('test.png')
             plt.pause(0.01)
 
             # ax1.clear()

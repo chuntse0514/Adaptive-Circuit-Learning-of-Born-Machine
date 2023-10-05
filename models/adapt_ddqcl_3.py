@@ -28,7 +28,6 @@ def operator_pool(n_qubit):
                 gate_description.append(f'e^[X{i} Y{j}]')
                 gate_description.append(f'e^[Y{i} Z{j}]')
                 gate_description.append(f'CRY[{i}, {j}]')
-
     for i in range(n_qubit):
         pool.append(partial(qml.RY, wires=i))
         gate_description.append(f'RY[{i}]')
@@ -86,14 +85,11 @@ class adapt_DDQCL:
 
         self.params = nn.ParameterDict({
             'ry': nn.Parameter(torch.full((self.n_qubit,), np.pi/2), requires_grad=True),
-            'freeze': nn.Parameter(torch.Tensor([]), requires_grad=False),
+            'eval-grad': nn.Parameter(torch.Tensor([]), requires_grad=True),
             'append': nn.Parameter(torch.Tensor([]), requires_grad=True)
         }).to(self.device)
 
-        self.operatorID = {
-            'append': [],
-            'freeze': []
-        }
+        self.operatorID = []
         self.loss_history = []
         self.kl_history = []
         self.js_history = []
@@ -113,22 +109,18 @@ class adapt_DDQCL:
         self.loss_fn = loss_fn
         self.criterion = Criterion[loss_fn]
 
-        self.filename = f'./images/ADAPT-DDQCL(data={data_class.name}, lr={lr}, loss={loss_fn}, ratio={self.ratio}, t1={self.threshold1}, t2={self.threshold2}).png'
-        self.tensor_file = f'./results/ADAPT-DDQCL(data={data_class.name}, lr={lr}, loss={loss_fn}, ratio={self.ratio}, t1={self.threshold1}, t2={self.threshold2}).pt'
-        self.result_file = f'./results/ADAPT-DDQCL(data={data_class.name}, lr={lr}, loss={loss_fn}, ratio={self.ratio}, t1={self.threshold1}, t2={self.threshold2}).pkl'
+        self.filename = f'./images/ADAPT-DDQCL-3(data={data_class.name}, lr={lr}, loss={loss_fn}, ratio={self.ratio}, t1={self.threshold1}, t2={self.threshold2}).png'
+        self.tensor_file = f'./results/ADAPT-DDQCL-3(data={data_class.name}, lr={lr}, loss={loss_fn}, ratio={self.ratio}, t1={self.threshold1}, t2={self.threshold2}).pt'
+        self.result_file = f'./results/ADAPT-DDQCL-3(data={data_class.name}, lr={lr}, loss={loss_fn}, ratio={self.ratio}, t1={self.threshold1}, t2={self.threshold2}).pkl'
 
-    def circuit(self, ry, freeze, append, mode=None):
+    def circuit(self, ry, append, eval_params=None, mode=None):
 
         if mode == 'train':
 
             for q in range(self.n_qubit):
                 qml.RY(ry[q], wires=q)
 
-            for i, id in enumerate(self.operatorID['freeze']):
-                gate = self.pool[id]
-                gate(freeze[i].detach())
-
-            for i, id in enumerate(self.operatorID['append']):
+            for i, id in enumerate(self.operatorID):
                 gate = self.pool[id]
                 gate(append[i])
             
@@ -137,14 +129,14 @@ class adapt_DDQCL:
         elif mode == 'eval-grad':
 
             for q in range(self.n_qubit):
-                qml.RY(ry[q], wires=q)
+                qml.RY(ry[q].detach(), wires=q)
 
-            for i, id in enumerate(self.operatorID['freeze']):
+            for i, id in enumerate(self.operatorID):
                 gate = self.pool[id]
-                gate(freeze[i].detach())
+                gate(append[i].detach())
 
             for i, gate in enumerate(self.pool):
-                gate(append[i])
+                gate(eval_params[i])
             
             return qml.probs(wires=list(range(self.n_qubit)))
 
@@ -153,14 +145,14 @@ class adapt_DDQCL:
         dev = qml.device('default.qubit.torch', wires=self.n_qubit)
         
         circuit = self.circuit
-        self.params['append'] = nn.Parameter(torch.zeros(len(self.pool)), requires_grad=True).to(self.device)
+        self.params['eval-grad'] = nn.Parameter(torch.zeros(len(self.pool)), requires_grad=True)
         model = qml.QNode(circuit, dev, interface='torch', diff_method='backprop')
-        prob = model(self.params['ry'], self.params['freeze'], self.params['append'], mode='eval-grad').squeeze()
+        prob = model(self.params['ry'], self.params['append'], self.params['eval-grad'], mode='eval-grad')
         loss = self.criterion(self.target_prob, prob)
         loss.backward()
-        grads = self.params['append'].grad.detach().cpu().numpy()
-        
+        grads = self.params['eval-grad'].grad.detach().cpu().numpy()
         grads = np.abs(grads)
+        
         max_grad = np.max(grads)
         if max_grad * self.ratio > self.threshold1:
             self.Ng = np.sum(grads > max_grad * self.ratio)
@@ -169,7 +161,7 @@ class adapt_DDQCL:
         
         max_grad_indicies = np.argsort(grads)[::-1][:self.Ng]
 
-        return grads[max_grad_indicies], max_grad_indicies, [self.gate_description[i] for i in max_grad_indicies]
+        return grads[max_grad_indicies].tolist(), max_grad_indicies.tolist(), [self.gate_description[i] for i in max_grad_indicies]
     
     def entanglement_measure(self):
 
@@ -193,6 +185,9 @@ class adapt_DDQCL:
     def fit(self):
         
         dev = qml.device('default.qubit.torch', wires=self.n_qubit)
+        circuit = self.circuit
+        model = qml.QNode(circuit, dev, interface='torch', diff_method='backprop')
+        opt = optim.Adam(self.params.values(), lr=self.lr)
 
         self.entanglement_measure()
 
@@ -205,15 +200,13 @@ class adapt_DDQCL:
                 print('Convergence criterion has reached, break the loop!')
                 break
 
-            self.operatorID['append'] = max_grad_indicies.tolist()
-            self.params['append'] = nn.Parameter(torch.zeros(self.Ng), requires_grad=True).to(self.device)
-            circuit = self.circuit
-            model = qml.QNode(circuit, dev, interface='torch', diff_method='backprop')
-            opt = optim.Adam(self.params.values(), lr=self.lr)
+            self.operatorID += max_grad_indicies
+            self.params['append'] = torch.cat((self.params['append'], nn.Parameter(torch.zeros(self.Ng), requires_grad=True).to(self.device)))
+            opt.param_groups[0]['params'][0] = self.params['append']
 
             while True:
                 opt.zero_grad()
-                prob =  model(self.params['ry'], self.params['freeze'], self.params['append'], mode='train').squeeze()
+                prob =  model(self.params['ry'], self.params['append'], mode='train')
                 loss = self.criterion(self.target_prob, prob)
                 loss.backward()
                 opt.step()
@@ -225,15 +218,12 @@ class adapt_DDQCL:
                 if grad_norm < self.threshold2:
                     break
 
-            self.operatorID['freeze'] += self.operatorID['append']
-            self.params['freeze'] = torch.cat((self.params['freeze'], self.params['append'].detach().clone()))
-
             kl_div, js_div = evaluate(self.target_prob.detach().cpu().numpy(), prob.detach().cpu().numpy())
             self.kl_history.append(kl_div)
             self.js_history.append(js_div)
             print(f'epoch: {i_epoch+1}  |   loss: {self.loss_history[-1]:.6f}  |   KL divergence: {kl_div:.6f}  |  JS divergence: {js_div:.6f}')
             
-        print(qml.draw(model)(self.params['ry'], self.params['freeze'], self.params['append'], mode='train'))
+        print(qml.draw(model)(self.params['ry'], self.params['append'], mode='train'))
     
 
         fig = plt.figure(figsize=(15, 9))
@@ -284,7 +274,7 @@ if __name__ == '__main__':
     from data import DATA_HUB
 
     model = adapt_DDQCL(
-        data_class=DATA_HUB['bas 3x3'],
+        data_class=DATA_HUB['log normal 10'],
         n_epoch=40,
         lr=1e-3,
         loss_fn='KL divergence',

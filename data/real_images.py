@@ -11,7 +11,8 @@ class RealImage(DataBaseClass):
         self.name = f'real image {filename[-5]}'
 
     def get_data(self, **kwargs) -> np.array:
-        image = np.array(Image.open(self.filename))
+        image = Image.open(self.filename)
+        image = np.array(image.convert('L'))
         image = np.squeeze(image.reshape(1, -1))
         return image / np.sum(image)
     

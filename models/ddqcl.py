@@ -7,6 +7,7 @@ from utils import epsilon, evaluate
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 from data import *
+import pickle
     
 class DDQCL:
 
@@ -41,18 +42,20 @@ class DDQCL:
             self.normalize_const = data_class.get_normalize_const() / 255
 
         Criterion = {
-            'KL divergence': lambda p, q: -torch.inner(p[p>0], torch.log2(q[p>0] / p[p>0])) - torch.sum(p==0),
-            'Renyi-0.5 divergence': lambda p, q: -2 * torch.log2(torch.sum(torch.sqrt(p[p>0] * q[p>0]))),
-            'Renyi-2 divergence': lambda p, q: torch.log2(torch.sum(p[p>0] ** 2 / (q[p>0]))),
-            'Renyi-inf divergence': lambda p, q: torch.log2(torch.max(p[p>0] / (q[p>0]))),
+            'KL divergence': lambda p, q: -torch.inner(p[p>0], torch.log(q[p>0] / p[p>0])),
+            'Renyi-0.5 divergence': lambda p, q: -2 * torch.log(torch.sum(torch.sqrt(p[p>0] * q[p>0]))),
+            'Renyi-2 divergence': lambda p, q: torch.log(torch.sum(p[p>0] ** 2 / (q[p>0]))),
             'Quantum relative entropy': lambda p, q: 1 - torch.sum(torch.sqrt(p[p>0] * q[p>0])) ** 2,
-            'MSE': lambda p, q: torch.sum(((p - q) * self.normalize_const) ** 2) / (2 ** self.n_qubit)
+            'MSE': lambda p, q: torch.sum(((p - q) * self.normalize_const) ** 2) / (2 ** self.n_qubit),
+            'negative cosine similarity': lambda p, q: -torch.cosine_similarity(p, q, dim=0)
         }
         
         self.loss_fn = loss_fn
         self.criterion = Criterion[loss_fn]
 
         self.filename = f'./images/DDQCL(data={data_class.name}, lr={lr}, loss={loss_fn}, reps={reps}).png'
+        self.tensor_file = f'./results/DDQCL(data={data_class.name}, lr={lr}, loss={loss_fn}, reps={reps}).pt'
+        self.result_file = f'./results/DDQCL(data={data_class.name}, lr={lr}, loss={loss_fn}, reps={reps}).pkl'
 
     def get_circuit(self):
         
@@ -70,20 +73,6 @@ class DDQCL:
         return qml.probs(wires=list(range(self.n_qubit)))
 
     def fit(self):
-
-        plt.ion()
-        fig = plt.figure(figsize=(15, 9))
-        gs = gridspec.GridSpec(2, 2, figure=fig)
-
-        if isinstance(self.data_class, RealImage):
-            ax1 = fig.add_subplot(gs[0, 0])
-            ax2 = fig.add_subplot(gs[1, 0])
-            ax3 = fig.add_subplot(gs[0, 1])
-            ax4 = fig.add_subplot(gs[1, 1])
-        else:
-            ax1 = fig.add_subplot(gs[0, 0])
-            ax2 = fig.add_subplot(gs[1, 0])
-            ax3 = fig.add_subplot(gs[:, 1])
 
         dev = qml.device('default.qubit.torch', wires=self.n_qubit)
         circuit = self.get_circuit
@@ -113,38 +102,51 @@ class DDQCL:
             if (i_epoch + 1) % 5 == 0:
                 print(f'epoch: {i_epoch+1}  |  loss: {self.loss_history[-1]: 6f}  |  KL divergence: {kl_div:6f}  |  JS divergence: {js_div:6f}')
 
+        fig = plt.figure(figsize=(15, 9))
+        gs = gridspec.GridSpec(2, 2, figure=fig)
 
-            if (i_epoch + 1) % (self.n_epoch // 5) == 0: 
-                ax1.clear()
-                ax1.plot(np.arange(len(self.kl_history))+1, self.kl_history, label='KL divergence', color='red', marker='^', markerfacecolor=None)
-                ax1.plot(np.arange(len(self.js_history))+1, self.js_history, label='JS divergence', color='blue', marker='x', markerfacecolor=None)
-                ax1.set_xlabel('epoch')
-                ax1.set_ylabel('KL / JS divergence')
-                ax1.grid()
-                ax1.legend()
+        if isinstance(self.data_class, RealImage):
+            ax1 = fig.add_subplot(gs[0, 0])
+            ax2 = fig.add_subplot(gs[1, 0])
+            ax3 = fig.add_subplot(gs[0, 1])
+            ax4 = fig.add_subplot(gs[1, 1])
+        else:
+            ax1 = fig.add_subplot(gs[0, 0])
+            ax2 = fig.add_subplot(gs[1, 0])
+            ax3 = fig.add_subplot(gs[:, 1])
 
-                ax2.clear()
-                ax2.plot(np.arange(len(self.loss_history))+1, self.loss_history, color='green', marker='P')
-                ax2.set_xlabel('iteration')
-                ax2.set_ylabel(self.loss_fn)
-                ax2.grid()
+        ax1.plot(np.arange(len(self.kl_history))+1, self.kl_history, label='KL divergence', color='red', marker='^', markerfacecolor=None)
+        ax1.plot(np.arange(len(self.js_history))+1, self.js_history, label='JS divergence', color='blue', marker='x', markerfacecolor=None)
+        ax1.set_xlabel('epoch')
+        ax1.set_ylabel('KL / JS divergence')
+        ax1.grid()
+        ax1.legend()
 
-                ax3.clear()
-                ax3.bar(np.arange(prob.shape[0])+1, self.target_prob.detach().cpu().numpy(), alpha=0.5, color='blue', label='target')
-                ax3.bar(np.arange(prob.shape[0])+1, prob.detach().cpu().numpy(), alpha=0.5, color='red', label='approx')
-                ax3.legend()
+        ax2.plot(np.arange(len(self.loss_history))+1, self.loss_history, color='green', marker='P')
+        ax2.set_xlabel('iteration')
+        ax2.set_ylabel(self.loss_fn)
+        ax2.grid()
 
-                if isinstance(self.data_class, RealImage):
-                    ax4.clear()
-                    ax4.imshow(prob.detach().cpu().numpy().reshape(256, 256))
+        ax3.bar(np.arange(prob.shape[0])+1, self.target_prob.detach().cpu().numpy(), alpha=0.5, color='blue', label='target')
+        ax3.bar(np.arange(prob.shape[0])+1, prob.detach().cpu().numpy(), alpha=0.5, color='red', label='approx')
+        ax3.legend()
 
-                plt.pause(0.01)
-                plt.savefig(self.filename)
+        if isinstance(self.data_class, RealImage):
+            ax4.clear()
+            ax4.imshow(prob.detach().cpu().numpy().reshape(256, 256))
+
+        plt.pause(0.01)
+        plt.savefig(self.filename)
 
         print(qml.draw(model)())
             
         plt.ioff()
         plt.show()
+        
+        torch.save(prob.detach().cpu(), self.tensor_file)
+        with open(self.result_file, 'wb') as f:
+            pickle.dump((self.loss_history, self.js_history, self.kl_history), f)
+
 
 if __name__ == '__main__':
     
@@ -153,9 +155,9 @@ if __name__ == '__main__':
     model = DDQCL(
         data_class=DATA_HUB['real image 1'],
         n_epoch=2000,
-        reps=20,
+        reps=10,
         lr=1e-3,
-        loss_fn='MSE',
+        loss_fn='KL divergence',
         sample_size=100000
     )
     

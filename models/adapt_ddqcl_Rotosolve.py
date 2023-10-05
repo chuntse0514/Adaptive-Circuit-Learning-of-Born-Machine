@@ -27,6 +27,10 @@ def operator_pool(n_qubit):
                 gate_description.append(f'e^[X{i} Y{j}]')
                 gate_description.append(f'e^[Y{i} Z{j}]')
         
+    for i in range(n_qubit):
+        pool.append(partial(PauliStringRotation, pauliString=('Y', [i])))
+        gate_description.append(f'e^[Y{i}]')
+
     return pool, gate_description
 
 def operator_pool_V(n_qubit):
@@ -96,10 +100,10 @@ class adapt_DDQCL:
         self.lr = lr
         self.threshold1 = 1e-5
         self.threshold2 = 1e-3
-        self.Ng = 1
+        self.Ng = 100
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.target_prob = torch.Tensor(data_class.get_data(num=sample_size)).double().to(self.device)
-        self.pool, self.gate_description = operator_pool_V(self.n_qubit)
+        self.pool, self.gate_description = operator_pool(self.n_qubit)
 
         self.params = nn.ParameterDict({
             'ry': nn.Parameter(torch.full((self.n_qubit,), np.pi/2), requires_grad=True),
@@ -126,6 +130,9 @@ class adapt_DDQCL:
 
         if mode == 'train':
 
+            for q in range(self.n_qubit):
+                qml.RY(ry[q], wires=q)
+
             for i, id in enumerate(self.operatorID['freeze']):
                 gate = self.pool[id]
                 gate(freeze[i].detach())
@@ -137,6 +144,9 @@ class adapt_DDQCL:
             return qml.probs(wires=list(range(self.n_qubit)))
 
         elif mode == 'eval':
+
+            for q in range(self.n_qubit):
+                qml.RY(ry[q], wires=q)
 
             for i, id in enumerate(self.operatorID['freeze']):
                 gate = self.pool[id]
@@ -217,21 +227,6 @@ class adapt_DDQCL:
 
         self.entanglement_measure()
 
-        # for i in range(10):
-        #     circuit = self.circuit
-        #     model = qml.QNode(circuit, dev, interface='torch', diff_method='backprop')
-
-        #     opt = Rotosolve_Torch(
-        #         params=[self.params['ry'], self.params['freeze'], self.params['append']],
-        #         qnode=model,
-        #         criterion=self.criterion,
-        #         target_prob=self.target_prob,
-        #         full_output=True,
-        #         mode='train'
-        #     )
-
-        #     print(opt.step(mode='train'))
-
         for i_epoch in range(self.n_epoch):
 
             min_losses, selected_indices, selected_gates = self.select_operator()
@@ -247,17 +242,16 @@ class adapt_DDQCL:
             circuit = self.circuit
             model = qml.QNode(circuit, dev, interface='torch', diff_method='backprop')
 
-            for i in range(10):
-                opt = Rotosolve_Torch(
-                    params=[self.params['ry'], self.params['freeze'], self.params['append']],
-                    qnode=model,
-                    criterion=self.criterion,
-                    target_prob=self.target_prob,
-                    full_output=True,
-                    mode='train'
-                )
+            opt = Rotosolve_Torch(
+                params=[self.params['ry'], self.params['freeze'], self.params['append']],
+                qnode=model,
+                criterion=self.criterion,
+                target_prob=self.target_prob,
+                full_output=True,
+                mode='train'
+            )
 
-                print(opt.step())
+            print(opt.step())
             prob =  model(self.params['ry'], self.params['freeze'], self.params['append'], mode='train').squeeze()
             loss = self.criterion(self.target_prob, prob)
             self.loss_history.append(loss.item())
@@ -308,7 +302,7 @@ if __name__ == '__main__':
     model = adapt_DDQCL(
         data_class=DATA_HUB['real image 1'],
         n_epoch=40,
-        lr=1e-3,
+        lr=1,
         sample_size=100000
     )
     
