@@ -26,7 +26,7 @@ class Bimodal(DataBaseClass):
         ds = []
         while len(ds) < num:
             p = self.get_point()
-            if 0 <= p < self.range - 1:
+            if 0 <= p <= self.range - 1:
                 ds.append(p)
         ds = np.round(ds).astype(int)
         ds, _ = np.histogram(ds, bins=list(range(self.range+1)), density=True)

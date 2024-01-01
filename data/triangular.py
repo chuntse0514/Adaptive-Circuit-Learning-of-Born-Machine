@@ -22,5 +22,5 @@ class Triangular(DataBaseClass):
                 if 0 <= d <= self.range - 1
             ])
         ds = np.round(ds[:num]).astype(int)
-        ds, _ = np.histogram(ds, bins=list(range(self.range+1)))
+        ds, _ = np.histogram(ds, bins=list(range(self.range+1)), density=True)
         return ds

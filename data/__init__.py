@@ -8,10 +8,10 @@ from .real_images import RealImage
 DATA_HUB = {
     'log normal 3': LogNormal(n_bit=3, mu=1., sigma=1.),
     'triangular 3': Triangular(n_bit=3, left=0, mode=2, right=7),
-    'bimodal 3': Bimodal(n_bit=3, mu1=0.5, sigma1=1., mu2=3.5, sigma2=0.5),
+    'bimodal 3': Bimodal(n_bit=3, mu1=1.25, sigma1=1, mu2=5.25, sigma2=1),
 
     'log normal 10': LogNormal(n_bit=10, mu=5.5, sigma=0.9),
-    'triangular 10': Triangular(n_bit=10, left=0, mode=2, right=1023),
+    'triangular 10': Triangular(n_bit=10, left=0, mode=256, right=1023),
     'bimodal 10': Bimodal(n_bit=10, mu1=2 ** 10 * 2 / 7, sigma1=2 ** 10 / 8, mu2=2 ** 10 * 5 / 7, sigma2=2 ** 10 / 8),
 
     'bas 2x2': BarAndStripes(width=2, height=2),

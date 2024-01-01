@@ -17,7 +17,6 @@ class DDQCL:
                  n_epoch: int, 
                  reps: int, 
                  lr: float,
-                 loss_fn: str,
                  sample_size=1000000
                  ):
         
@@ -29,10 +28,9 @@ class DDQCL:
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.target_prob = torch.Tensor(data_class.get_data(num=sample_size)).double().to(self.device)
 
-        self.params = nn.ParameterDict({
-            'su2': nn.Parameter((torch.rand(self.n_qubit, 2) * 2 - 1) * np.pi, requires_grad=True),
-            'ry': nn.Parameter((torch.rand(self.n_qubit, reps) * 2 - 1) * np.pi, requires_grad=True)
-        }).to(self.device)
+        self.params = nn.ParameterList(
+            [nn.Parameter((torch.rand(self.n_qubit * 3) * 2 - 1) * np.pi, requires_grad=True) for _ in range(reps+1)]
+        ).to(self.device)
 
         self.loss_history = []
         self.kl_history = []
@@ -40,44 +38,33 @@ class DDQCL:
 
         if isinstance(data_class, RealImage):
             self.normalize_const = data_class.get_normalize_const() / 255
-
-        Criterion = {
-            'KL divergence': lambda p, q: -torch.inner(p[p>0], torch.log(q[p>0] / p[p>0])),
-            'Renyi-0.5 divergence': lambda p, q: -2 * torch.log(torch.sum(torch.sqrt(p[p>0] * q[p>0]))),
-            'Renyi-2 divergence': lambda p, q: torch.log(torch.sum(p[p>0] ** 2 / (q[p>0]))),
-            'Quantum relative entropy': lambda p, q: 1 - torch.sum(torch.sqrt(p[p>0] * q[p>0])) ** 2,
-            'MSE': lambda p, q: torch.sum(((p - q) * self.normalize_const) ** 2) / (2 ** self.n_qubit),
-            'negative cosine similarity': lambda p, q: -torch.cosine_similarity(p, q, dim=0)
-        }
         
-        self.loss_fn = loss_fn
-        self.criterion = Criterion[loss_fn]
+        self.criterion = lambda p, q: torch.inner(p[p>0], torch.log(p[p>0] / q[p>0]))
 
-        self.filename = f'./images/DDQCL(data={data_class.name}, lr={lr}, loss={loss_fn}, reps={reps}).png'
-        self.tensor_file = f'./results/DDQCL(data={data_class.name}, lr={lr}, loss={loss_fn}, reps={reps}).pt'
-        self.result_file = f'./results/DDQCL(data={data_class.name}, lr={lr}, loss={loss_fn}, reps={reps}).pkl'
+        self.filename = f'./images/DDQCL(data={data_class.name}, lr={lr}, reps={reps}).png'
+        self.tensor_file = f'./results/DDQCL(data={data_class.name}, lr={lr}, reps={reps}).pt'
+        self.result_file = f'./results/DDQCL(data={data_class.name}, lr={lr}, reps={reps}).pkl'
 
-    def get_circuit(self):
-        
-        for q in range(self.n_qubit):
-            qml.RY(self.params['su2'][q, 0], wires=q)
-            qml.RZ(self.params['su2'][q, 1], wires=q)
-
-        for rep in range(self.reps):
+    def circuit(self):
+        for layer in range(self.reps):
+            for q in range(self.n_qubit):
+                qml.RX(self.params[layer][3*q], wires=q)
+                qml.RY(self.params[layer][3*q+1], wires=q)
+                qml.RX(self.params[layer][3*q+2], wires=q)
             for q in range(self.n_qubit):
                 qml.CZ(wires=[q, (q+1) % self.n_qubit])
-            
-            for q in range(self.n_qubit):
-                qml.RY(self.params['ry'][q, rep], wires=q)
-
-        return qml.probs(wires=list(range(self.n_qubit)))
+        for q in range(self.n_qubit):
+            qml.RX(self.params[-1][3*q], wires=q)
+            qml.RY(self.params[-1][3*q+1], wires=q)
+            qml.RX(self.params[-1][3*q+2], wires=q)
+        return qml.probs()
 
     def fit(self):
 
         dev = qml.device('default.qubit.torch', wires=self.n_qubit)
-        circuit = self.get_circuit
+        circuit = self.circuit
         model = qml.QNode(circuit, dev, interface='torch', diff_method='backprop')
-        opt = optim.Adam(self.params.values(), lr=self.lr)
+        opt = optim.Adam(self.params, lr=self.lr)
 
         for i_epoch in range(self.n_epoch):
 
@@ -94,13 +81,16 @@ class DDQCL:
             self.kl_history.append(kl_div)
             self.js_history.append(js_div)
 
-            grad_vec = torch.cat((self.params['su2'].grad.view(-1) , self.params['ry'].grad.view(-1)))
+            grad_vec = torch.cat([params.grad for params in self.params])
             grad_norm = torch.linalg.vector_norm(grad_vec)
 
             print(loss.item(), grad_norm.item())
 
             if (i_epoch + 1) % 5 == 0:
                 print(f'epoch: {i_epoch+1}  |  loss: {self.loss_history[-1]: 6f}  |  KL divergence: {kl_div:6f}  |  JS divergence: {js_div:6f}')
+
+            if grad_norm < 1e-3:
+                break
 
         fig = plt.figure(figsize=(15, 9))
         gs = gridspec.GridSpec(2, 2, figure=fig)
@@ -124,7 +114,7 @@ class DDQCL:
 
         ax2.plot(np.arange(len(self.loss_history))+1, self.loss_history, color='green', marker='P')
         ax2.set_xlabel('iteration')
-        ax2.set_ylabel(self.loss_fn)
+        ax2.set_ylabel('KL divergence')
         ax2.grid()
 
         ax3.bar(np.arange(prob.shape[0])+1, self.target_prob.detach().cpu().numpy(), alpha=0.5, color='blue', label='target')
@@ -135,30 +125,21 @@ class DDQCL:
             ax4.clear()
             ax4.imshow(prob.detach().cpu().numpy().reshape(256, 256))
 
-        plt.pause(0.01)
         plt.savefig(self.filename)
 
-        print(qml.draw(model)())
-            
-        plt.ioff()
-        plt.show()
-        
         torch.save(prob.detach().cpu(), self.tensor_file)
         with open(self.result_file, 'wb') as f:
             pickle.dump((self.loss_history, self.js_history, self.kl_history), f)
 
 
 if __name__ == '__main__':
-    
-    from data import DATA_HUB
 
     model = DDQCL(
         data_class=DATA_HUB['real image 1'],
-        n_epoch=2000,
-        reps=10,
+        n_epoch=3160,
+        reps=20,
         lr=1e-3,
-        loss_fn='KL divergence',
-        sample_size=100000
+        sample_size=100000000
     )
     
     model.fit()
