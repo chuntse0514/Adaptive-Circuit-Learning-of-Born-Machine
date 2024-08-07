@@ -6,7 +6,7 @@ import numpy as np
 class DataBaseClass(ABC):
 
     @abstractmethod
-    def get_data(self, num: int) -> np.array:
+    def get_data(self) -> np.array:
         pass
 
     @property

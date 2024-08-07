@@ -10,7 +10,7 @@ from utils import (
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 from data import *
-import pickle
+import json
 from scipy.sparse.csgraph import minimum_spanning_tree
 
 def chowliu_tree(pdata):
@@ -69,27 +69,48 @@ class Generator(nn.Module):
 
     def __init__(self, n_qubit: int, k: int, pairs=None):
         super().__init__()
-        self.params = nn.ParameterList(
-            [nn.Parameter((torch.rand(n_qubit * 3) * 2 - 1) * np.pi, requires_grad=True) for _ in range(k+1)]
-        )
+        
         dev = qml.device('default.qubit.torch', wires=n_qubit)
+        
+        # self.params = nn.ParameterList(
+        #     [nn.Parameter((torch.rand(n_qubit * 3) * 2 - 1) * np.pi, requires_grad=True) for _ in range(k+1)]
+        # )
+
+        # @qml.qnode(dev, interface='torch', diff_method='backprop')
+        # def circuit():
+        #     for layer in range(k):
+        #         for q in range(n_qubit):
+        #             qml.RX(self.params[layer][3*q], wires=q)
+        #             qml.RY(self.params[layer][3*q+1], wires=q)
+        #             qml.RX(self.params[layer][3*q+2], wires=q)
+        #         if pairs:
+        #             for i, j in pairs:
+        #                 qml.CZ(wires=[i, j])
+        #         else:
+        #             for q in range(n_qubit):
+        #                 qml.CZ(wires=[q, (q+1) % n_qubit])
+        #     for q in range(n_qubit):
+        #         qml.RX(self.params[-1][3*q], wires=q)
+        #         qml.RY(self.params[-1][3*q+1], wires=q)
+        #         qml.RX(self.params[-1][3*q+2], wires=q)
+        #     return qml.probs()
+        
+        self.params = nn.ParameterList(
+            [nn.Parameter((torch.rand(n_qubit * 2) * 2 - 1) * np.pi, requires_grad=True) for _ in range(k)]
+        )
+        
         @qml.qnode(dev, interface='torch', diff_method='backprop')
         def circuit():
             for layer in range(k):
                 for q in range(n_qubit):
-                    qml.RZ(self.params[layer][3*q], wires=q)
-                    qml.RX(self.params[layer][3*q+1], wires=q)
-                    qml.RZ(self.params[layer][3*q+2], wires=q)
+                    qml.RY(self.params[layer][q], wires=q)
                 if pairs:
                     for i, j in pairs:
-                        qml.CNOT(wires=[i, j])
+                        qml.CRZ(self.params[layer][n_qubit+q], wires=[i, j])
                 else:
                     for q in range(n_qubit):
-                        qml.CNOT(wires=[q, (q+1) % n_qubit])
-            for q in range(n_qubit):
-                qml.RZ(self.params[-1][3*q], wires=q)
-                qml.RX(self.params[-1][3*q+1], wires=q)
-                qml.RZ(self.params[-1][3*q+2], wires=q)
+                        qml.CRZ(self.params[layer][n_qubit+q], wires=[q, (q+1) % n_qubit])
+                    
             return qml.probs()
 
         self.model = circuit
@@ -135,7 +156,6 @@ class QCBM:
                  n_epoch: int, 
                  reps: int, 
                  lr: float,
-                 sample_size=1000000 
                  ):
         self.data_class = data_class
         self.n_qubit = data_class.n_bit
@@ -143,7 +163,7 @@ class QCBM:
         self.reps = reps
         self.lr = lr
         self.device = 'cuda:0' if torch.cuda.is_available() else 'cpu' 
-        self.target_prob = torch.Tensor(data_class.get_data(num=sample_size)).double().to(self.device)
+        self.target_prob = torch.Tensor(data_class.get_data()).double().to(self.device)
         
         self.generator = Generator(self.n_qubit, 
                                    k=reps,
@@ -156,8 +176,7 @@ class QCBM:
         self.js_history = []
 
         self.filename = f'./images/QCBM(data={data_class.name}, lr={lr}, reps={reps}).png'
-        self.tensor_file = f'./results/QCBM(data={data_class.name}, lr={lr}, reps={reps}).pt'
-        self.result_file = f'./results/QCBM(data={data_class.name}, lr={lr}, reps={reps}).pkl'
+        self.result_file = f'./results/QCBM(data={data_class.name}, lr={lr}, reps={reps}).json'
 
     def fit(self):
 
@@ -189,10 +208,12 @@ class QCBM:
             grad_vec = torch.cat([params.grad for params in self.generator.params])
             grad_norm = torch.linalg.vector_norm(grad_vec)
 
+            print(kl_div, grad_norm.item())
+            
             if (i_epoch + 1) % 5 == 0:
                 print(f'epoch: {i_epoch+1} | MMD loss: {mmd_loss.item():6f} | KL divergence: {kl_div:6f} | JS divergence: {js_div:6f}')
 
-            if grad_norm < 1e-3:
+            if grad_norm < 5e-5:
                 break
 
         ax1.clear()
@@ -224,19 +245,23 @@ class QCBM:
         plt.ioff()
         plt.show()
 
-        torch.save(prob.detach().cpu(), self.tensor_file)
-        with open(self.result_file, 'wb') as f:
-            pickle.dump((self.loss_history, self.js_history, self.kl_history), f)
+        with open(self.result_file, 'w') as f:
+            data_dict = {
+                'pmf': prob.detach().cpu().tolist(),
+                'kl div': self.kl_history,
+                'js div': self.js_history,
+                'loss history': self.loss_history
+            }
+            json.dump(data_dict, f)
 
 
 if __name__ == '__main__':
     
     model = QCBM(
-        data_class=DATA_HUB['triangular 10'],
-        n_epoch=3160,
-        reps=16,
-        lr=1e-2,
-        sample_size=100000000
+        data_class=DATA_HUB['bimodal 10'],
+        n_epoch=8000,
+        reps=5,
+        lr=0.1,
     )
 
     model.fit()

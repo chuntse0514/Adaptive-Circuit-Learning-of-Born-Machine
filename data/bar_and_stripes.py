@@ -10,23 +10,25 @@ class BarAndStripes(DataBaseClass):
         self.COL, self.ROW = width, height
         self.name = f'bas {width}x{height}'
 
-    def get_data(self, num: int) -> np.array:
+    def get_data(self) -> np.array:
         indices = self.get_indices()
-        data = np.random.choice(indices, size=num)
-        data, _ = np.histogram(data, bins=list(range(2 ** self._n_bit + 1)), density=True)
-        return data
+        p = np.zeros(2 ** self._n_bit)
+        p[indices] = 1 / len(indices)
+        return p
+    
+    def binary_row_to_int(self, binary_row):
+        return int(''.join(binary_row.astype(str)), 2)
 
     def get_indices(self):
-        RIGHT_COL = sum(1 << (r * self.COL) for r in range(self.ROW))
-        bars = [i * RIGHT_COL  for i in range(2 ** self.COL)]
-        ONE_ROW = 2 ** self.COL - 1
-        strips = [ONE_ROW * self.row_base(i) for i in range(2 ** self.ROW)]
-        return bars + strips[1:-1]
+        
+        bitstring_stripes = np.array([list(np.binary_repr(i, self.COL)) for i in range(2**self.COL)], dtype=int) # (2 ** COL, COL) 
+        stripes_pattern = np.repeat(bitstring_stripes, repeats=self.ROW, axis=0) # ((2 ** COL) * ROW, COL)
+        stripes_index_bin = stripes_pattern.reshape(2 ** self.COL, self.ROW * self.COL) # (2 ** COL, ROW * COL)
+        stripes_index = np.apply_along_axis(self.binary_row_to_int, 1, stripes_index_bin)
 
-    def row_base(self, i: int):
-        s = 0
-        for _ in range(self.ROW):
-            s = s << self.COL
-            s |= i % 2
-            i = i >> 1    
-        return s
+        bitstring_bars = np.array([list(np.binary_repr(i, self.ROW)) for i in range(2**self.ROW)], dtype=int).reshape(self.ROW * 2 ** self.ROW, 1)
+        bars_pattern = np.repeat(bitstring_bars, repeats=self.COL, axis=1)
+        bars_index_bin = bars_pattern.reshape(2 ** self.ROW, self.ROW * self.COL)
+        bars_index = np.apply_along_axis(self.binary_row_to_int, 1, bars_index_bin)
+        
+        return stripes_index.tolist() + bars_index[1:-1].tolist() # exclude the first and last bar indices since they are repeated.

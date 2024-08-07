@@ -6,7 +6,7 @@ from .real_images import RealImage
 
 
 DATA_HUB = {
-    'log normal 3': LogNormal(n_bit=3, mu=1., sigma=1.),
+    'log normal 3': LogNormal(n_bit=3, mu=1., sigma=0.5),
     'triangular 3': Triangular(n_bit=3, left=0, mode=2, right=7),
     'bimodal 3': Bimodal(n_bit=3, mu1=1.25, sigma1=1, mu2=5.25, sigma2=1),
 
@@ -21,4 +21,8 @@ DATA_HUB = {
     'real image 1': RealImage(n_bit=16, filename='./images/real_image_1.jpg'),
     'real image 2': RealImage(n_bit=16, filename='./images/real_image_2.jpg'),
     'real image 3': RealImage(n_bit=16, filename='./images/real_image_3.jpg'),
+    
+    'real image 1 (R)': RealImage(n_bit=16, filename='./images/real_image_1.jpg', remapped=True),
+    'real image 2 (R)': RealImage(n_bit=16, filename='./images/real_image_2.jpg', remapped=True),
+    'real image 3 (R)': RealImage(n_bit=16, filename='./images/real_image_3.jpg', remapped=True),
 }

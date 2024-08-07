@@ -10,7 +10,7 @@ from utils import (
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 from data import *
-import pickle
+import json
 
 
 class Generator(nn.Module):
@@ -66,7 +66,6 @@ class QGAN:
                  n_epoch: int, 
                  reps: int, 
                  lr: float,
-                 sample_size=1000000 
                  ):
         self.data_class = data_class
         self.n_qubit = data_class.n_bit
@@ -74,7 +73,7 @@ class QGAN:
         self.reps = reps
         self.lr = lr
         self.device = 'cuda:0' if torch.cuda.is_available() else 'cpu' 
-        self.target_prob = torch.Tensor(data_class.get_data(num=sample_size)).double().to(self.device)
+        self.target_prob = torch.Tensor(data_class.get_data()).double().to(self.device)
         
         self.generator = Generator(self.n_qubit, k=reps).to(self.device)
         self.discriminator = Discriminator().to(self.device)
@@ -89,8 +88,7 @@ class QGAN:
         self.js_history = []
 
         self.filename = f'./images/QGAN(data={data_class.name}, lr={lr}, reps={reps}).png'
-        self.tensor_file = f'./results/QGAN(data={data_class.name}, lr={lr}, reps={reps}).pt'
-        self.result_file = f'./results/QGAN(data={data_class.name}, lr={lr}, reps={reps}).pkl'
+        self.result_file = f'./results/QGAN(data={data_class.name}, lr={lr}, reps={reps}).json'
 
 
     def fit(self):
@@ -120,21 +118,31 @@ class QGAN:
             kl_div, js_div = evaluate(self.target_prob.detach().cpu().numpy(), prob.detach().cpu().numpy())
             self.kl_history.append(kl_div)
             self.js_history.append(js_div)
+            
+            g_grad_vec = torch.cat([params.grad for params in self.generator.params])
+            g_grad_norm = torch.linalg.vector_norm(g_grad_vec).item()
+            d_grad_vec = torch.cat([params.grad.flatten() for params in self.discriminator.parameters()])
+            d_grad_norm = torch.linalg.vector_norm(d_grad_vec).item()
+            
+            print(kl_div, "  ", g_grad_norm, "  ", d_grad_norm)    
+            
+            if np.sqrt(g_grad_norm ** 2 + d_grad_norm ** 2) < 0.005:
+                break
 
             if (i_epoch + 1) % 5 == 0:
                 print(f'epoch: {i_epoch+1} | G_loss: {g_losses[-1]:6f} | D_loss: {d_losses[-1]:6f} | KL divergence: {kl_div:6f} | JS divergence: {js_div:6f}')
 
         ax1.clear()
-        ax1.plot(np.arange(len(self.kl_history))+1, self.kl_history, label='KL divergence', color='red', marker='^', markerfacecolor=None)
-        ax1.plot(np.arange(len(self.js_history))+1, self.js_history, label='JS divergence', color='blue', marker='x', markerfacecolor=None)
+        ax1.plot(np.arange(len(self.kl_history))+1, self.kl_history, label='KL divergence', color='red', markerfacecolor=None)
+        ax1.plot(np.arange(len(self.js_history))+1, self.js_history, label='JS divergence', color='blue', markerfacecolor=None)
         ax1.set_xlabel('epoch')
         ax1.set_ylabel('KL / JS divergence')
         ax1.grid()
         ax1.legend()
 
         ax2.clear()
-        ax2.plot(np.arange(len(g_losses))+1, g_losses, color='royalblue', marker='P', label='G loss')
-        ax2.plot(np.arange(len(d_losses))+1, d_losses, color='magenta', marker='P', label='D loss')
+        ax2.plot(np.arange(len(g_losses))+1, g_losses, color='royalblue', label='G loss')
+        ax2.plot(np.arange(len(d_losses))+1, d_losses, color='magenta', label='D loss')
         ax2.set_xlabel('iteration')
         ax2.set_ylabel('loss')
         ax2.legend()
@@ -157,9 +165,15 @@ class QGAN:
 
         self.loss_history['g loss'] = g_losses
         self.loss_history['d loss'] = d_losses
-        torch.save(prob.detach().cpu(), self.tensor_file)
-        with open(self.result_file, 'wb') as f:
-            pickle.dump((self.loss_history, self.js_history, self.kl_history), f)
+        
+        with open(self.result_file, 'w') as f:
+            data_dict = {
+                'pmf': prob.detach().cpu().tolist(),
+                'kl div': self.kl_history,
+                'js div': self.js_history,
+                'loss history': self.loss_history
+            }
+            json.dump(data_dict, f)
 
 
     def train_generator(self):
@@ -190,11 +204,10 @@ class QGAN:
 if __name__ == '__main__':
 
     model = QGAN(
-        data_class=DATA_HUB['bas 4x4'],
-        n_epoch=2000,
-        reps=20,
-        lr=1e-3,
-        sample_size=100000000
+        data_class=DATA_HUB['bimodal 3'],
+        n_epoch=200,
+        reps=3,
+        lr=0.001,
     )
     
     model.fit()

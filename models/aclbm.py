@@ -12,7 +12,7 @@ import matplotlib.gridspec as gridspec
 from functools import partial
 from pprint import pprint
 from data import *
-import pickle
+import json
 
 def operator_pool(n_qubit, selected_pairs=None):
 
@@ -112,7 +112,6 @@ class ACLBM:
                              BarAndStripes | RealImage,
                  n_epoch: int,
                  loss_fn: str,
-                 sample_size=1000000,
                  reduce=False
                  ):
         
@@ -121,11 +120,11 @@ class ACLBM:
         self.n_epoch = n_epoch
         self.threshold1 = 1e-3
         self.threshold2 = 5e-3
-        self.Ng = 3
+        self.No = 3
         self.alpha = 0.2
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        # self.device = torch.device("cpu")
-        self.target_prob = torch.Tensor(data_class.get_data(num=sample_size)).double().to(self.device)
+
+        self.target_prob = torch.Tensor(data_class.get_data()).double().to(self.device)
         if reduce:
             reduce_ratio=0.5
             selected_pairs = select_qubit_pairs(self.target_prob, self.n_qubit, ratio=reduce_ratio)
@@ -169,13 +168,11 @@ class ACLBM:
         self.criterion = Criterion[loss_fn]
 
         if reduce:
-            self.filename = f'./images/ACLBM(data={data_class.name}, loss={loss_fn}, Ng={self.Ng}, t1={self.threshold1}, t2={self.threshold2}, reduce={reduce_ratio}).png'
-            self.tensor_file = f'./results/ACLBM(data={data_class.name}, loss={loss_fn}, Ng={self.Ng}, t1={self.threshold1}, t2={self.threshold2}, reduce={reduce_ratio}).pt'
-            self.result_file = f'./results/ACLBM(data={data_class.name}, loss={loss_fn}, Ng={self.Ng}, t1={self.threshold1}, t2={self.threshold2}, reduce={reduce_ratio}).pkl'
+            self.filename = f'./images/ACLBM(data={data_class.name}, No={self.No}, t1={self.threshold1}, t2={self.threshold2}, reduce={reduce_ratio}).png'
+            self.result_file = f'./results/ACLBM(data={data_class.name}, No={self.No}, t1={self.threshold1}, t2={self.threshold2}, reduce={reduce_ratio}).json'
         else:
-            self.filename = f'./images/ACLBM(data={data_class.name}, loss={loss_fn}, Ng={self.Ng}, t1={self.threshold1}, t2={self.threshold2}).png'
-            self.tensor_file = f'./results/ACLBM(data={data_class.name}, loss={loss_fn}, Ng={self.Ng}, t1={self.threshold1}, t2={self.threshold2}).pt'
-            self.result_file = f'./results/ACLBM(data={data_class.name}, loss={loss_fn}, Ng={self.Ng}, t1={self.threshold1}, t2={self.threshold2}).pkl'
+            self.filename = f'./images/ACLBM(data={data_class.name}, No={self.No}, t1={self.threshold1}, t2={self.threshold2}).png'
+            self.result_file = f'./results/ACLBM(data={data_class.name}, No={self.No}, t1={self.threshold1}, t2={self.threshold2}).json'
 
     def circuit(self, ry, append, eval_params=None, mode=None):
 
@@ -216,8 +213,8 @@ class ACLBM:
         loss.backward()
         grads = self.params['eval-grad'].grad.detach().cpu().numpy()
         grads = np.abs(grads)
-        if len(grads) > self.Ng:
-            selected_index = np.argsort(grads)[::-1][:self.Ng].tolist()
+        if len(grads) > self.No:
+            selected_index = np.argsort(grads)[::-1][:self.No].tolist()
         else:
             selected_index = np.argsort(grads)[::-1].tolist()
         selected_gate = [self.gate_description[index] for index in selected_index]
@@ -233,7 +230,7 @@ class ACLBM:
 
         for i_epoch in range(self.n_epoch):
 
-            if len(self.loss_history['iteration']) == 8500: 
+            if len(self.loss_history['iteration']) >= 3200: 
                 break
 
             max_grad, max_grad_index, max_grad_gate = self.select_operator()
@@ -245,7 +242,7 @@ class ACLBM:
 
             self.operatorID += max_grad_index
             self.params['append'] = torch.cat((self.params['append'], nn.Parameter(torch.zeros(len(max_grad)), requires_grad=True).to(self.device)))
-            lr = torch.linalg.vector_norm(torch.Tensor(max_grad)).item() / np.sqrt(self.Ng) * self.alpha
+            lr = torch.linalg.vector_norm(torch.Tensor(max_grad)).item() / np.sqrt(self.No) * self.alpha
             print('learning rate = ', lr)
             if i_epoch == 0:
                 opt = optim.Adam(self.params.values(), lr=lr)
@@ -320,22 +317,28 @@ class ACLBM:
 
         if isinstance(self.data_class, RealImage):
             ax4.clear()
-            ax4.imshow(prob.detach().cpu().numpy().reshape(256, 256), cmap='gray')
+            if self.data_class.remapped:
+                ax4.imshow(prob.detach().cpu().numpy()[self.data_class.inverse_indices].reshape(256, 256), cmap='gray')
+            else:
+                ax4.imshow(prob.detach().cpu().numpy().reshape(256, 256), cmap='gray')
 
         plt.savefig(self.filename)
 
-        torch.save(prob.detach().cpu(), self.tensor_file)
-        with open(self.result_file, 'wb') as f:
-            pickle.dump((self.loss_history, self.js_history, self.kl_history), f)
-
+        with open(self.result_file, 'w') as f:
+            data_dict = {
+                'pmf': prob.detach().cpu().tolist(),
+                'kl div': self.kl_history,
+                'js div': self.js_history,
+                'loss history': self.loss_history
+            }
+            json.dump(data_dict, f)
 
 if __name__ == '__main__':
 
     model = ACLBM(
-        data_class=DATA_HUB['real image 2'],
+        data_class=DATA_HUB['real image 1'],
         n_epoch=250,
         loss_fn='KL divergence',
-        sample_size=100000000,
         reduce=False
     )
     
