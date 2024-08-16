@@ -6,6 +6,8 @@ import numpy as np
 class LogNormal(DataBaseClass):
 
     def __init__(self, n_bit: int, mu: float, sigma: float, aux_bit=0):
+        self._n_bit = n_bit
+        self._dist_property = 'dense'
         self.aux_bit = aux_bit
         self.range = 2 ** n_bit
         self.mu, self.sigma = mu, sigma

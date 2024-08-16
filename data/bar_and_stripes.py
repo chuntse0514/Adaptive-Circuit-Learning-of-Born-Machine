@@ -7,6 +7,7 @@ class BarAndStripes(DataBaseClass):
 
     def __init__(self, width: int, height: int):
         self._n_bit = width * height
+        self._dist_property = 'sparse'
         self.COL, self.ROW = width, height
         self.name = f'bas {width}x{height}'
 

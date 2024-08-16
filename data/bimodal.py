@@ -7,6 +7,8 @@ from .base import DataBaseClass
 class Bimodal(DataBaseClass):
 
     def __init__(self, n_bit: int, mu1: float, sigma1: float, mu2: float, sigma2: float, aux_bit=0):
+        self._n_bit = n_bit
+        self._dist_property = 'dense'
         self.aux_bit = aux_bit
         self.range = 2 ** n_bit
         self.mu1, self.sigma1, self.mu2, self.sigma2 = mu1, sigma1, mu2, sigma2

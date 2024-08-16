@@ -28,15 +28,14 @@ def ints_to_onehot(ints: np.array, num_class: int) -> np.array:
         ret[idx][i] = 1
     return ret
 
-def evaluate(target: np.array, outcome: np.array, verbose_pmf: bool = False):
+def evaluate(target: torch.Tensor, outcome: torch.Tensor):
+    
     assert(target.shape == outcome.shape)
     
-    if verbose_pmf:
-        print(outcome)
-        print(target)
-        
-    return entropy(target, outcome), \
-           jensenshannon(target, outcome) ** 2
+    kl_div_fn = lambda p, q: torch.inner(p[p>0], torch.log(p[p>0] / q[p>0]))
+    js_div_fn = lambda p, q: 1 / 2 * kl_div_fn(p, (p+q)/2) + 1 / 2 * kl_div_fn(q, (p+q)/2)
+    
+    return kl_div_fn(target, outcome).item(), js_div_fn(target, outcome).item()
 
 def partial_trace(state: torch.Tensor, dims=list[int]):
     

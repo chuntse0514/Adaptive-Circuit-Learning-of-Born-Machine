@@ -7,6 +7,7 @@ class RealImage(DataBaseClass):
 
     def __init__(self, n_bit, filename, remapped=False):
         self._n_bit = n_bit
+        self._dist_property = 'dense'
         self.filename = filename
         if not remapped:
             self.name = f'real image {filename[-5]}'
@@ -24,7 +25,3 @@ class RealImage(DataBaseClass):
             image = image[sorted_indices]
             
         return image / np.sum(image)
-    
-    def get_normalize_const(self):
-        image = np.squeeze(np.array(Image.open(self.filename)).reshape(1, -1))
-        return np.sum(image)

@@ -6,6 +6,8 @@ import numpy as np
 class Triangular(DataBaseClass):
     
     def __init__(self, n_bit: int, left: int, mode: int, right: int, aux_bit=0):
+        self._n_bit = n_bit
+        self._dist_property = 'dense'
         self.aux_bit = aux_bit
         self.range = 2 ** n_bit
         self.left, self.mode, self.right = left, mode, right

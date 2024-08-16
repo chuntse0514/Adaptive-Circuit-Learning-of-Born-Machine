@@ -12,3 +12,7 @@ class DataBaseClass(ABC):
     @property
     def n_bit(self):
         return self._n_bit
+    
+    @property
+    def dist_property(self):
+        return self._dist_property

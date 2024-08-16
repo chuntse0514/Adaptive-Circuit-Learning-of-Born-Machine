@@ -18,11 +18,11 @@ DATA_HUB = {
     'bas 3x3': BarAndStripes(width=3, height=3),
     'bas 4x4': BarAndStripes(width=4, height=4),
 
-    'real image 1': RealImage(n_bit=16, filename='./images/real_image_1.jpg'),
-    'real image 2': RealImage(n_bit=16, filename='./images/real_image_2.jpg'),
-    'real image 3': RealImage(n_bit=16, filename='./images/real_image_3.jpg'),
+    'real image 1': RealImage(n_bit=16, filename='./data/images/real_image_1.jpg'),
+    'real image 2': RealImage(n_bit=16, filename='./data/images/real_image_2.jpg'),
+    'real image 3': RealImage(n_bit=16, filename='./data/images/real_image_3.jpg'),
     
-    'real image 1 (R)': RealImage(n_bit=16, filename='./images/real_image_1.jpg', remapped=True),
-    'real image 2 (R)': RealImage(n_bit=16, filename='./images/real_image_2.jpg', remapped=True),
-    'real image 3 (R)': RealImage(n_bit=16, filename='./images/real_image_3.jpg', remapped=True),
+    'real image 1 (R)': RealImage(n_bit=16, filename='./data/images/real_image_1.jpg', remapped=True),
+    'real image 2 (R)': RealImage(n_bit=16, filename='./data/images/real_image_2.jpg', remapped=True),
+    'real image 3 (R)': RealImage(n_bit=16, filename='./data/images/real_image_3.jpg', remapped=True),
 }
