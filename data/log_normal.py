@@ -11,7 +11,10 @@ class LogNormal(DataBaseClass):
         self.aux_bit = aux_bit
         self.range = 2 ** n_bit
         self.mu, self.sigma = mu, sigma
-        self.name = f'log normal {n_bit}'
+        if aux_bit:
+            self.name = f'log normal {n_bit} - {aux_bit}'
+        else:
+            self.name = f'log normal {n_bit}'
 
     def get_data(self) -> np.array:
         

@@ -11,6 +11,8 @@ class DataBaseClass(ABC):
 
     @property
     def n_bit(self):
+        if hasattr(self, 'aux_bit'):
+            return self._n_bit + self.aux_bit
         return self._n_bit
     
     @property

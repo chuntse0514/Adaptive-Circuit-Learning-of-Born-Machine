@@ -281,7 +281,7 @@ class QCBM:
 if __name__ == '__main__':
     
     model = QCBM(
-        data_class=DATA_HUB['real image 3'],
+        data_class=DATA_HUB['real image 1_1'],
         n_epoch=8000,
         reps=20,
         lr=0.05,

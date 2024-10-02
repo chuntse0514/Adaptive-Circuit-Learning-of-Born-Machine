@@ -102,8 +102,8 @@ class DDQCL:
         self.criterion = lambda p, q: torch.inner(p[p>0], torch.log(p[p>0] / q[p>0]))
         self.optim = optim.Adam(params=self.generator.parameters(), lr=lr, amsgrad=True)
         
-        self.filename = f'./images/DDQCL/DDQCL-test(data={data_class.name}, lr={lr}, reps={reps}).png'
-        self.result_file = f'./results/DDQCL/DDQCL-test(data={data_class.name}, lr={lr}, reps={reps}).json'
+        self.filename = f'./images/DDQCL/DDQCL(data={data_class.name}, lr={lr}, reps={reps}).png'
+        self.result_file = f'./results/DDQCL/DDQCL(data={data_class.name}, lr={lr}, reps={reps}).json'
     
     def plot_training_result(self, prob):
         
@@ -178,10 +178,10 @@ class DDQCL:
 if __name__ == '__main__':
 
     model = DDQCL(
-        data_class=DATA_HUB['log normal 10'],
-        n_epoch=3000,
-        reps=5,
-        lr=0.05,
+        data_class=DATA_HUB['real image 1_1'],
+        n_epoch=8000,
+        reps=20,
+        lr=0.01,
     )
     
     model.fit()

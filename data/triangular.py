@@ -11,7 +11,10 @@ class Triangular(DataBaseClass):
         self.aux_bit = aux_bit
         self.range = 2 ** n_bit
         self.left, self.mode, self.right = left, mode, right
-        self.name = f'triangular {n_bit}'
+        if aux_bit:
+            self.name = f'triangular {n_bit} - {aux_bit}'
+        else:
+            self.name = f'triangular {n_bit}'
         
     def tri_pmf(self, k, a, b, c):
         p = np.zeros_like(k)

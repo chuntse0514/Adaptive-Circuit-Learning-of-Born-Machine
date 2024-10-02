@@ -9,10 +9,13 @@ class RealImage(DataBaseClass):
         self._n_bit = n_bit
         self._dist_property = 'dense'
         self.filename = filename
+        filename = filename.replace(".", "_")
+        filename = filename.replace("/", "_")
+        split_filename = filename.split("_")[4:-1]
         if not remapped:
-            self.name = f'real image {filename[-5]}'
+            self.name = " ".join(split_filename)
         else:
-            self.name = f'real image {filename[-5]} (R)'
+            self.name = " ".join(split_filename) + " (R)"
         self.remapped = remapped
 
     def get_data(self) -> np.array:

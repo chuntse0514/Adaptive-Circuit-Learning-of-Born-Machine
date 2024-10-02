@@ -13,16 +13,24 @@ DATA_HUB = {
     'log normal 10': LogNormal(n_bit=10, mu=5.5, sigma=0.9),
     'triangular 10': Triangular(n_bit=10, left=0, mode=256, right=1023),
     'bimodal 10': Bimodal(n_bit=10, mu1=2 ** 10 * 2 / 7, sigma1=2 ** 10 / 8, mu2=2 ** 10 * 5 / 7, sigma2=2 ** 10 / 8),
+    
+    'log normal 10 - 1': LogNormal(n_bit=10, mu=5.5, sigma=0.9, aux_bit=1),
+    'log normal 10 - 2': LogNormal(n_bit=10, mu=5.5, sigma=0.9, aux_bit=2),
+    'log normal 10 - 3': LogNormal(n_bit=10, mu=5.5, sigma=0.9, aux_bit=3),
 
     'bas 2x2': BarAndStripes(width=2, height=2),
     'bas 3x3': BarAndStripes(width=3, height=3),
     'bas 4x4': BarAndStripes(width=4, height=4),
 
     'real image 1': RealImage(n_bit=16, filename='./data/images/real_image_1.jpg'),
+    'real image 1-1': RealImage(n_bit=16, filename='./data/images/real_image_1-1.jpg'),
     'real image 2': RealImage(n_bit=16, filename='./data/images/real_image_2.jpg'),
     'real image 3': RealImage(n_bit=16, filename='./data/images/real_image_3.jpg'),
+    'real image 3-3': RealImage(n_bit=16, filename='./data/images/real_image_3-3.jpg'),
     
     'real image 1 (R)': RealImage(n_bit=16, filename='./data/images/real_image_1.jpg', remapped=True),
+    'real image 1-1 (R)': RealImage(n_bit=16, filename='./data/images/real_image_1-1.jpg', remapped=True),
     'real image 2 (R)': RealImage(n_bit=16, filename='./data/images/real_image_2.jpg', remapped=True),
     'real image 3 (R)': RealImage(n_bit=16, filename='./data/images/real_image_3.jpg', remapped=True),
+    'real image 3-3 (R)': RealImage(n_bit=16, filename='./data/images/real_image_3-3.jpg', remapped=True),
 }

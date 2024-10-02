@@ -230,6 +230,7 @@ class QGAN:
         gen_prob = self.generator()
         sample = torch.arange(2**self.n_qubit).view(-1, 1).float().to(self.device)
         disc_prob = self.discriminator(sample).double().squeeze()
+        disc_prob = disc_prob / torch.linalg.norm(disc_prob)
         
         self.g_optim.zero_grad()
         g_loss = -torch.inner(gen_prob[gen_prob>0], torch.log(disc_prob[gen_prob>0]+epsilon))
@@ -242,6 +243,7 @@ class QGAN:
         gen_prob = self.generator()
         sample = torch.arange(2**self.n_qubit).view(-1, 1).float().to(self.device)
         disc_prob = self.discriminator(sample).double().squeeze()
+        disc_prob = disc_prob / torch.linalg.norm(disc_prob)
 
         self.d_optim.zero_grad()
         real_loss = -torch.inner(self.target_prob[gen_prob>0], torch.log(disc_prob[gen_prob>0]+epsilon))
@@ -254,10 +256,10 @@ class QGAN:
 if __name__ == '__main__':
 
     model = QGAN(
-        data_class=DATA_HUB['bimodal 10'],
+        data_class=DATA_HUB['real image 3-3'],
         n_epoch=1000,
-        reps=5,
-        lr=0.002,
+        reps=20,
+        lr=0.0001,
     )
     
     model.fit()
