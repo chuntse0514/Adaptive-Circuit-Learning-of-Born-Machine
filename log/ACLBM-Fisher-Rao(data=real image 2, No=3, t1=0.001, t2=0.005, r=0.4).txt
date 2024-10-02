@@ -1,3 +1,0 @@
-nohup: ignoring input
-
-libgomp: Thread creation failed: Resource temporarily unavailable
