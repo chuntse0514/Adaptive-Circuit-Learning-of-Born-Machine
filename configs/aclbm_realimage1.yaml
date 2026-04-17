@@ -1,0 +1,7 @@
+model: aclbm
+dataset: real image 1
+n_epoch: 1000
+n_iter: 50
+No: 5
+alpha: 0.2
+reduction_rate: null

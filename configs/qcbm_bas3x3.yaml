@@ -1,0 +1,5 @@
+model: qcbm
+dataset: bas 3x3
+n_epoch: 2
+reps: 10
+lr: 0.05
