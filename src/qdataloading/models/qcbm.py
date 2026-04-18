@@ -69,10 +69,10 @@ class QCBM(BaseModel):
         self.optimizer = optax.adam(lr)
         self.opt_state = self.optimizer.init(self.params)
 
-        self.filename = f'{self.image_dir}/QCBM/QCBM(data={data_class.name}, lr={lr}, reps={reps}).png'
+        self.filename = f'{self.image_dir}/QCBM/QCBM(data={data_class.name}, lr={lr}, reps={reps}).pdf'
         self.result_file = f'{self.output_dir}/QCBM/QCBM(data={data_class.name}, lr={lr}, reps={reps}).json'
 
-    def fit(self):
+    def fit(self, save=True):
         threshold = 1e-5 if self.data_class.dist_property == 'sparse' else 1e-3
         
         @jax.jit
@@ -107,7 +107,8 @@ class QCBM(BaseModel):
             if grad_norm < threshold:
                 print(f"Converged at epoch {i_epoch+1}")
                 break
-            
-        self.plot_training_result(pred_prob, self.filename)
-        self.save_results(pred_prob, self.result_file)
+        
+        if save:
+            self.plot_training_result(pred_prob, self.filename)
+            self.save_results(pred_prob, self.result_file)
         self.params = params

@@ -4,7 +4,9 @@ from .bimodal import Bimodal
 from .bar_and_stripes import BarAndStripes
 from .real_images import RealImage
 import os
+import glob
 
+# Synthetic datasets remain hardcoded as they have specific parameters
 _DATA_CONFIGS = {
     'log normal 3': (LogNormal, {'n_bit': 3, 'mu': 1.0, 'sigma': 0.5}),
     'triangular 3': (Triangular, {'n_bit': 3, 'left': 0, 'mode': 2, 'right': 7}),
@@ -21,19 +23,35 @@ _DATA_CONFIGS = {
     'bas 2x2': (BarAndStripes, {'width': 2, 'height': 2}),
     'bas 3x3': (BarAndStripes, {'width': 3, 'height': 3}),
     'bas 4x4': (BarAndStripes, {'width': 4, 'height': 4}),
-
-    'real image 1': (RealImage, {'n_bit': 16, 'filename': 'data/images/real_image_1.jpg'}),
-    'real image 1-1': (RealImage, {'n_bit': 16, 'filename': 'data/images/real_image_1-1.jpg'}),
-    'real image 2': (RealImage, {'n_bit': 16, 'filename': 'data/images/real_image_2.jpg'}),
-    'real image 3': (RealImage, {'n_bit': 16, 'filename': 'data/images/real_image_3.jpg'}),
-    'real image 3-3': (RealImage, {'n_bit': 16, 'filename': 'data/images/real_image_3-3.jpg'}),
-    
-    'real image 1 (R)': (RealImage, {'n_bit': 16, 'filename': 'data/images/real_image_1.jpg', 'remapped': True}),
-    'real image 1-1 (R)': (RealImage, {'n_bit': 16, 'filename': 'data/images/real_image_1-1.jpg', 'remapped': True}),
-    'real image 2 (R)': (RealImage, {'n_bit': 16, 'filename': 'data/images/real_image_2.jpg', 'remapped': True}),
-    'real image 3 (R)': (RealImage, {'n_bit': 16, 'filename': 'data/images/real_image_3.jpg', 'remapped': True}),
-    'real image 3-3 (R)': (RealImage, {'n_bit': 16, 'filename': 'data/images/real_image_3-3.jpg', 'remapped': True}),
 }
+
+def _register_real_images():
+    """Automatically discover and register images from the images directory."""
+    data_dir = os.path.dirname(__file__)
+    image_dir = os.path.join(data_dir, 'images')
+    
+    # Support common image formats
+    extensions = ['*.jpg', '*.jpeg', '*.png']
+    image_paths = []
+    for ext in extensions:
+        image_paths.extend(glob.glob(os.path.join(image_dir, ext)))
+    
+    for path in image_paths:
+        filename = os.path.basename(path)
+        # Create a clean name (e.g., "real_image_1.jpg" -> "real image 1")
+        base_name = os.path.splitext(filename)[0].replace('_', ' ')
+        
+        # Relative path for RealImage class to use
+        rel_path = os.path.join('src/qdataloading/data/images', filename)
+        
+        # Register standard version
+        _DATA_CONFIGS[base_name] = (RealImage, {'n_bit': 16, 'filename': rel_path})
+        
+        # Register remapped version
+        _DATA_CONFIGS[f"{base_name} (R)"] = (RealImage, {'n_bit': 16, 'filename': rel_path, 'remapped': True})
+
+# Initialize dynamic registration
+_register_real_images()
 
 def get_dataset(name):
     if name not in _DATA_CONFIGS:
@@ -45,4 +63,4 @@ def get_dataset(name):
     return dataset
 
 def list_datasets():
-    return list(_DATA_CONFIGS.keys())
+    return sorted(list(_DATA_CONFIGS.keys()))

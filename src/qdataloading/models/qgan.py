@@ -55,10 +55,10 @@ class QGAN(BaseModel):
         self.d_opt_state = self.d_optimizer.init(self.d_params)
 
         self.loss_history = {'g loss': [], 'd loss': []}
-        self.filename = f'{self.image_dir}/QGAN/QGAN(data={data_class.name}, lr={lr}, reps={reps}).png'
+        self.filename = f'{self.image_dir}/QGAN/QGAN(data={data_class.name}, lr={lr}, reps={reps}).pdf'
         self.result_file = f'{self.output_dir}/QGAN/QGAN(data={data_class.name}, lr={lr}, reps={reps}).json'
 
-    def fit(self):
+    def fit(self, save=True):
         best_kl = float('inf')
         best_pmf = None
         
@@ -118,6 +118,7 @@ class QGAN(BaseModel):
             if (i_epoch + 1) % 100 == 0:
                 print(f'epoch: {i_epoch+1} | G_loss: {float(g_loss):6f} | D_loss: {float(d_loss):6f} | KL: {kl_div:6f}')
 
-        self.plot_training_result(best_pmf, self.filename)
-        self.save_results(best_pmf, self.result_file)
+        if save:
+            self.plot_training_result(best_pmf, self.filename)
+            self.save_results(best_pmf, self.result_file)
         self.g_params, self.d_params = g_params, d_params
